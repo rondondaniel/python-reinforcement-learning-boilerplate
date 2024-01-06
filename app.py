@@ -8,7 +8,7 @@ class Environment:
     def get_observation(self):
         return [0.0, 0.0, 0.0, 0.0]
     
-    def get_actions(sself):
+    def get_actions(self):
         return [0, 1]
     
     def is_done(self):
