@@ -43,10 +43,15 @@ class Environment:
         self.steps_left -= 1
     
     def _get_reward(self):
+        # Compute the distance to the goal
+        distance_to_goal = abs(self.agent_position[0] - self.goal_position[0]) + abs(self.agent_position[1] - self.goal_position[1])
+    
+        # If the agent is at the goal position, return a large positive reward
         if self.agent_position == self.goal_position:
-            return 1.0
+            return 100.0
+        # If the agent is not at the goal position, return a penality proportional to the distance to the goal
         else:
-            return 0.0
+            return -distance_to_goal
 
     def step(self, action):
         info = {}
@@ -110,6 +115,7 @@ if __name__ == "__main__":
         next_state, reward, done, info = env.step(action)
         logger.info("Action: %s; Reward: %.4f" % (action, reward))
         logger.info("Next State: %s" % next_state)
+        logger.info("-------------------------------------")
 
         # Update the total reward
         agent.total_reward += reward
