@@ -16,8 +16,7 @@ class Environment:
         self.steps_left = 10
         self.agent_position = [0, 0]  # New attribute to store the agent's position
         self.goal_position = [4, 4]  # New attribute to store the goal's position
-        self.action_space = [0, 1, 2, 3]  # New attribute to store the action space
-
+ 
     def reset(self):
         self.steps_left = 10
         self.agent_position = [0, 0]
@@ -25,34 +24,44 @@ class Environment:
     def get_observation(self):
         return self.agent_position  # Return the agent's position as the observation
     
-    def get_actions(self):
-        return self.action_space  # Return the action space
     
     def is_done(self):
         return self.steps_left == 0
-
-    def action(self, action):
-        if self.is_done():
-            raise Exception("Game Over")
+    
+    def _move(self, action):
+        if action == 0:
+            self.agent_position[0] -= 1
+        elif action == 1:
+            self.agent_position[0] += 1
+        elif action == 2:
+            self.agent_position[1] += 1
+        elif action == 3:
+            self.agent_position[1] -= 1
+        else:
+            raise Exception("Invalid action")
         
         self.steps_left -= 1
+    
+    def _get_reward(self):
+        if self.agent_position == self.goal_position:
+            return 1.0
+        else:
+            return 0.0
 
-        # return a reward based on the action taken
-        match action:
-            case 0:
-                self.agent_position[0] -= 1
-                return -0.5
-            case 1:
-                self.agent_position[0] += 1
-                return 0.5
-            case 2:
-                self.agent_position[1] += 1
-                return 1.0
-            case 3:
-                self.agent_position[1] -= 1
-                return -1.0
-            case _:
-                raise Exception("Invalid action")
+    def step(self, action):
+        info = {}
+        reward = 0.0
+
+        # Move the agent
+        self._move(action)
+
+        # get the reward and check if the game is over
+        reward = self._get_reward()
+        next_state = self.agent_position
+        done = self.is_done()
+            
+        # return the next state, reward, done and info
+        return next_state, reward, done, info
 
 class Agent:
     """The agent that will interact with the environment. The agent will
@@ -62,28 +71,50 @@ class Agent:
 
     def __init__(self):
         self.total_reward = 0.0
+        self.action_space = [0, 1, 2, 3]  # New attribute to store the action space
 
-    def step(self, env):
-        current_obs = env.get_observation()
-        logger.info("Observation: %s" % current_obs)
-
-        actions = env.get_actions()
+    def _get_actions(self):
+        return self.action_space  # Return the action space
+    
+    def choose_action(self, observation):
+        # Get the list of possible actions
+        actions = self._get_actions()
 
         # Randomly choose an action
         # modify the policy to choose the action based on the observation
-        policy = random.choice(actions)
-        reward = env.action(policy)
-        logger.info("Action: %s; Reward: %.4f" % (policy, reward))
-
-        self.total_reward += reward
-
+        action = random.choice(actions)
+        
+        return action
+        
 if __name__ == "__main__":
     """The main function that will run the environment and agent
     """
+    
+    done = False
     env = Environment()
     agent = Agent()
 
-    while not env.is_done():
-        agent.step(env)
-        
+    # Reset the environment
+    env.reset()
+    current_obs = env.get_observation()
+
+    # Loop until the environment is done
+    while not done:
+        # Log the current observation
+        logger.info("Observation: %s" % current_obs)
+
+        # Choose an action based on the current observation
+        action = agent.choose_action(current_obs)
+
+        # Take the action and get the reward
+        next_state, reward, done, info = env.step(action)
+        logger.info("Action: %s; Reward: %.4f" % (action, reward))
+        logger.info("Next State: %s" % next_state)
+
+        # Update the total reward
+        agent.total_reward += reward
+        # Update the current observation
+        current_obs = next_state
+
+    logger.info("Episode done!")
     logger.info("Total reward got: %.4f" % agent.total_reward)
