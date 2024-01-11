@@ -16,16 +16,27 @@ class Environment:
         self.steps_left = 10
         self.agent_position = [0, 0]  # New attribute to store the agent's position
         self.goal_position = [4, 4]  # New attribute to store the goal's position
+        self.action_space = [0, 1, 2, 3]  # New attribute to store the action space
  
     def reset(self):
         self.steps_left = 10
         self.agent_position = [0, 0]
+        
+        return self._get_observation()
     
-    def get_observation(self):
-        return self.agent_position  # Return the agent's position as the observation
+    def get_actions(self):
+        return self.action_space
     
+    def _get_goal_position(self):
+        return self.goal_position
     
-    def is_done(self):
+    def _get_observation(self):
+        return {
+            "distance_to_goal": abs(self.agent_position[0] - self.goal_position[0]) + abs(self.agent_position[1] - self.goal_position[1]),
+            "agent_position": self.agent_position 
+        }
+    
+    def _is_done(self):
         return self.steps_left == 0
     
     def _move(self, action):
@@ -42,12 +53,13 @@ class Environment:
         
         self.steps_left -= 1
     
-    def _get_reward(self):
-        # Compute the distance to the goal
-        distance_to_goal = abs(self.agent_position[0] - self.goal_position[0]) + abs(self.agent_position[1] - self.goal_position[1])
-    
+    def _get_reward(self, observation):
+        # Get the distance to the goal and position from the observation
+        distance_to_goal = observation["distance_to_goal"]
+        agent_position = observation["agent_position"]
+
         # If the agent is at the goal position, return a large positive reward
-        if self.agent_position == self.goal_position:
+        if agent_position == self._get_goal_position():
             return 100.0
         # If the agent is not at the goal position, return a penality proportional to the distance to the goal
         else:
@@ -60,13 +72,13 @@ class Environment:
         # Move the agent
         self._move(action)
 
-        # get the reward and check if the game is over
-        reward = self._get_reward()
-        next_state = self.agent_position
-        done = self.is_done()
-            
+        # Get the new state, reward, done and info
+        observations = self._get_observation()
+        reward = self._get_reward(observations)
+        done = self._is_done()
+        
         # return the next state, reward, done and info
-        return next_state, reward, done, info
+        return observations, reward, done, info
 
 class Agent:
     """The agent that will interact with the environment. The agent will
@@ -74,12 +86,26 @@ class Agent:
         based on the action taken
     """
 
-    def __init__(self):
+    def __init__(self, env):
         self.total_reward = 0.0
-        self.action_space = [0, 1, 2, 3]  # New attribute to store the action space
+        self.action_space = env.get_actions()  # New attribute to store the action space
+        self.last_action = None
+        self.last_reward = None
 
     def _get_actions(self):
         return self.action_space  # Return the action space
+    
+    def _get_last_action(self):
+        return self.last_action
+    
+    def _set_last_action(self, action):
+        self.last_action = action
+    
+    def set_total_reward(self, reward):
+        self.total_reward += reward
+
+    def get_total_reward(self):
+        return self.total_reward
     
     def choose_action(self, observation):
         # Get the list of possible actions
@@ -87,7 +113,15 @@ class Agent:
 
         # Randomly choose an action
         # modify the policy to choose the action based on the observation
-        action = random.choice(actions)
+        # use the observation to choose the action based on the distance to the goal
+        if observation["distance_to_goal"] > 0:
+            if 
+            action = random.choice(actions)
+        else:
+            action = None
+
+        # Set the last action
+        self._set_last_action(action)
         
         return action
         
@@ -97,11 +131,10 @@ if __name__ == "__main__":
     
     done = False
     env = Environment()
-    agent = Agent()
+    agent = Agent(env)
 
-    # Reset the environment
-    env.reset()
-    current_obs = env.get_observation()
+    # Reset the environment and agent
+    current_obs = env.reset()
 
     # Loop until the environment is done
     while not done:
@@ -112,15 +145,15 @@ if __name__ == "__main__":
         action = agent.choose_action(current_obs)
 
         # Take the action and get the reward
-        next_state, reward, done, info = env.step(action)
+        new_state, reward, done, info = env.step(action)
         logger.info("Action: %s; Reward: %.4f" % (action, reward))
-        logger.info("Next State: %s" % next_state)
-        logger.info("-------------------------------------")
+        logger.info("Next State: %s" % new_state)
+        logger.info("---------------------------------------------------------------")
 
         # Update the total reward
-        agent.total_reward += reward
+        agent.set_total_reward(reward)
         # Update the current observation
-        current_obs = next_state
+        current_obs = new_state
 
     logger.info("Episode done!")
-    logger.info("Total reward got: %.4f" % agent.total_reward)
+    logger.info("Total reward got: %.4f" % agent.get_total_reward())
