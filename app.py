@@ -87,41 +87,45 @@ class Agent:
     """
 
     def __init__(self, env):
-        self.total_reward = 0.0
-        self.action_space = env.get_actions()  # New attribute to store the action space
-        self.last_action = None
-        self.last_reward = None
+        self._total_reward = 0.0
+        self._action_space = env.get_actions()  # New attribute to store the action space
+        self._last_action = None
+        self._last_reward = None
 
-    def _get_actions(self):
-        return self.action_space  # Return the action space
-    
-    def _get_last_action(self):
-        return self.last_action
-    
-    def _set_last_action(self, action):
-        self.last_action = action
-    
-    def set_total_reward(self, reward):
-        self.total_reward += reward
+    @property
+    def action_space(self):
+        return self._action_space  # Return the action space
 
-    def get_total_reward(self):
-        return self.total_reward
-    
+    @property
+    def last_action(self):
+        return self._last_action
+
+    @last_action.setter
+    def last_action(self, action):
+        self._last_action = action
+
+    @property
+    def total_reward(self):
+        return self._total_reward
+
+    @total_reward.setter
+    def total_reward(self, reward):
+        self._total_reward += reward
+
     def choose_action(self, observation):
         # Get the list of possible actions
-        actions = self._get_actions()
+        actions = self.action_space
 
         # Randomly choose an action
         # modify the policy to choose the action based on the observation
         # use the observation to choose the action based on the distance to the goal
         if observation["distance_to_goal"] > 0:
-            if 
             action = random.choice(actions)
         else:
             action = None
 
         # Set the last action
-        self._set_last_action(action)
+        self.last_action = action
         
         return action
         
@@ -151,9 +155,9 @@ if __name__ == "__main__":
         logger.info("---------------------------------------------------------------")
 
         # Update the total reward
-        agent.set_total_reward(reward)
+        agent.total_reward = reward
         # Update the current observation
         current_obs = new_state
 
     logger.info("Episode done!")
-    logger.info("Total reward got: %.4f" % agent.get_total_reward())
+    logger.info("Total reward got: %.4f" % agent.total_reward)
