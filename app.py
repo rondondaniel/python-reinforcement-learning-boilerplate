@@ -13,29 +13,47 @@ class Environment:
     """
 
     def __init__(self):
-        self.steps_left = 10
-        self.agent_position = [0, 0]  # New attribute to store the agent's position
-        self.goal_position = [4, 4]  # New attribute to store the goal's position
-        self.action_space = [0, 1, 2, 3]  # New attribute to store the action space
- 
+        self._steps_left = 10
+        self._agent_position = [0, 0]  # New attribute to store the agent's position
+        self._goal_position = [4, 4]  # New attribute to store the goal's position
+        self._action_space = [0, 1, 2, 3]  # New attribute to store the action space
+
+    @property
+    def steps_left(self):
+        return self._steps_left
+
+    @steps_left.setter
+    def steps_left(self, steps):
+        self._steps_left = steps
+
+    @property
+    def agent_position(self):
+        return self._agent_position
+
+    @agent_position.setter
+    def agent_position(self, position):
+        self._agent_position = position
+
+    @property
+    def goal_position(self):
+        return self._goal_position
+
+    @property
+    def action_space(self):
+        return self._action_space
+
     def reset(self):
         self.steps_left = 10
         self.agent_position = [0, 0]
         
         return self._get_observation()
-    
-    def get_actions(self):
-        return self.action_space
-    
-    def _get_goal_position(self):
-        return self.goal_position
-    
+
     def _get_observation(self):
         return {
             "distance_to_goal": abs(self.agent_position[0] - self.goal_position[0]) + abs(self.agent_position[1] - self.goal_position[1]),
             "agent_position": self.agent_position 
         }
-    
+
     def _is_done(self):
         return self.steps_left == 0
     
@@ -59,7 +77,7 @@ class Environment:
         agent_position = observation["agent_position"]
 
         # If the agent is at the goal position, return a large positive reward
-        if agent_position == self._get_goal_position():
+        if agent_position == self.goal_position:
             return 100.0
         # If the agent is not at the goal position, return a penality proportional to the distance to the goal
         else:
@@ -88,7 +106,7 @@ class Agent:
 
     def __init__(self, env):
         self._total_reward = 0.0
-        self._action_space = env.get_actions()  # New attribute to store the action space
+        self._action_space = env.action_space  # New attribute to store the action space
         self._last_action = None
         self._last_reward = None
 
