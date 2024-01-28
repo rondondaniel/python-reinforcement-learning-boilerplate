@@ -13,8 +13,8 @@ class Environment:
     """
 
     def __init__(self):
-        self._steps_left = 10
-        self._agent_position = [0, 0]  # New attribute to store the agent's position
+        self._steps_left = None
+        self._agent_position = None
         self._goal_position = [4, 4]  # New attribute to store the goal's position
         self._action_space = [0, 1, 2, 3]  # New attribute to store the action space
 
@@ -43,7 +43,7 @@ class Environment:
         return self._action_space
 
     def reset(self):
-        self.steps_left = 10
+        self.steps_left = 100
         self.agent_position = [0, 0]
         
         return self._get_observation()
@@ -58,17 +58,30 @@ class Environment:
         return self.steps_left == 0
     
     def _move(self, action):
-        if action == 0:
-            self.agent_position[0] -= 1
-        elif action == 1:
-            self.agent_position[0] += 1
-        elif action == 2:
-            self.agent_position[1] += 1
-        elif action == 3:
-            self.agent_position[1] -= 1
-        else:
-            raise Exception("Invalid action")
+        # Move the agent based on the action chosen
+        match action:
+            case 0:
+                self.agent_position[0] -= 1
+            case 1:
+                self.agent_position[0] += 1
+            case 2:
+                self.agent_position[1] += 1
+            case 3:
+                self.agent_position[1] -= 1
+            case _:
+                raise Exception("Invalid action")
+            
+        # avoid the agent to go out of the grid
+        if self.agent_position[0] < 0:
+            self.agent_position[0] = 0
+        if self.agent_position[0] > 4:
+            self.agent_position[0] = 4
+        if self.agent_position[1] < 0:
+            self.agent_position[1] = 0
+        if self.agent_position[1] > 4:
+            self.agent_position[1] = 4
         
+        # Decrease the number of steps left
         self.steps_left -= 1
     
     def _get_reward(self, observation):
@@ -108,7 +121,8 @@ class Agent:
         self._total_reward = 0.0
         self._action_space = env.action_space  # New attribute to store the action space
         self._last_action = None
-        self._last_reward = None
+        self._last_total_reward = 0.0
+        self._last_distance_to_goal = 8.0
 
     @property
     def action_space(self):
@@ -129,6 +143,22 @@ class Agent:
     @total_reward.setter
     def total_reward(self, reward):
         self._total_reward += reward
+    
+    @property
+    def last_total_reward(self):
+        return self._last_total_reward
+    
+    @last_total_reward.setter
+    def last_total_reward(self,total_reward):
+        self._last_total_reward = total_reward
+
+    @property
+    def last_distance_to_goal(self):
+        return self._last_distance_to_goal
+    
+    @last_distance_to_goal.setter
+    def last_distance_to_goal(self, distance_to_goal):
+        self._last_distance_to_goal = distance_to_goal
 
     def choose_action(self, observation):
         # Get the list of possible actions
@@ -137,12 +167,16 @@ class Agent:
         # Randomly choose an action
         # modify the policy to choose the action based on the observation
         # use the observation to choose the action based on the distance to the goal
-        if observation["distance_to_goal"] > 0:
+        if self.total_reward <= self.last_total_reward and self.last_distance_to_goal <= observation["distance_to_goal"]:
             action = random.choice(actions)
         else:
-            action = None
+            if self.last_action is None :
+                action = random.choice(actions)
+            else:
+                action = self.last_action
 
-        # Set the last action
+        # Set the last distance to goal and last action
+        self.last_distance_to_goal = observation["distance_to_goal"]
         self.last_action = action
         
         return action
@@ -161,7 +195,9 @@ if __name__ == "__main__":
     # Loop until the environment is done
     while not done:
         # Log the current observation
+        logger.info("Steps left: %d" % env.steps_left)
         logger.info("Observation: %s" % current_obs)
+        logger.info("Total reward: %.4f" % agent.total_reward)
 
         # Choose an action based on the current observation
         action = agent.choose_action(current_obs)
@@ -173,6 +209,7 @@ if __name__ == "__main__":
         logger.info("---------------------------------------------------------------")
 
         # Update the total reward
+        agent.last_total_reward = agent.total_reward
         agent.total_reward = reward
         # Update the current observation
         current_obs = new_state
