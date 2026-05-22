@@ -1,13 +1,11 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-import logging
+from loguru import logger
+import sys
 
-# Configure standard logging
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-stream_handler = logging.StreamHandler()
-logger.addHandler(stream_handler)
+logger.remove()
+logger.add(sys.stderr, format="{time:YYYY-MM-DD HH:mm:ss} | <yellow>{level}</yellow> | <blue>{message}</blue>,")
 
 class GridWorldEnv(gym.Env):
     """
