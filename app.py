@@ -1,218 +1,149 @@
-import random
-import logging
+import gymnasium as gym
+from gymnasium import spaces
+import numpy as np
+from loguru import logger
+import sys
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-stream_handler = logging.StreamHandler()
-logger.addHandler(stream_handler)
+logger.remove()
+logger.add(sys.stderr, format="{time:YYYY-MM-DD HH:mm:ss} | <yellow>{level}</yellow> | <blue>{message}</blue>,")
 
-class Environment:
-    """A simple environment with a fixed set of states and actions. The agent
-    can move in four directions, and the goal is to reach the goal state in
-    as few steps as possible. The agent receives a reward based on the action
+class GridWorldEnv(gym.Env):
     """
-
-    def __init__(self):
-        self._steps_left = None
-        self._agent_position = None
-        self._goal_position = [4, 4]  # New attribute to store the goal's position
-        self._action_space = [0, 1, 2, 3]  # New attribute to store the action space
-
-    @property
-    def steps_left(self):
-        return self._steps_left
-
-    @steps_left.setter
-    def steps_left(self, steps):
-        self._steps_left = steps
-
-    @property
-    def agent_position(self):
-        return self._agent_position
-
-    @agent_position.setter
-    def agent_position(self, position):
-        self._agent_position = position
-
-    @property
-    def goal_position(self):
-        return self._goal_position
-
-    @property
-    def action_space(self):
-        return self._action_space
-
-    def reset(self):
-        self.steps_left = 100
-        self.agent_position = [0, 0]
+    Standard Gymnasium environment for a 2D Grid World.
+    Goal: Navigate to the bottom-right corner in the fewest steps.
+    """
+    def __init__(self, grid_size: int = 5, max_steps: int = 50):
+        super().__init__()
+        self.grid_size = grid_size
+        self.max_steps = max_steps
         
-        return self._get_observation()
+        # Action space: 0: Up, 1: Down, 2: Right, 3: Left
+        self.action_space = spaces.Discrete(4)
+        
+        # Observation space: (x, y) coordinates bounding box
+        self.observation_space = spaces.Box(
+            low=np.array([0, 0]), 
+            high=np.array([grid_size - 1, grid_size - 1]), 
+            dtype=np.int32
+        )
+        
+        self._agent_location = np.array([0, 0], dtype=np.int32)
+        self._target_location = np.array([grid_size - 1, grid_size - 1], dtype=np.int32)
+        self._steps_taken = 0
 
-    def _get_observation(self):
-        return {
-            "distance_to_goal": abs(self.agent_position[0] - self.goal_position[0]) + abs(self.agent_position[1] - self.goal_position[1]),
-            "agent_position": self.agent_position 
-        }
+    def _get_obs(self) -> np.ndarray:
+        # Return a copy to prevent the agent from mutating internal state
+        return self._agent_location.copy()
 
-    def _is_done(self):
-        return self.steps_left == 0
-    
-    def _move(self, action):
-        # Move the agent based on the action chosen
-        match action:
-            case 0:
-                self.agent_position[0] -= 1
-            case 1:
-                self.agent_position[0] += 1
-            case 2:
-                self.agent_position[1] += 1
-            case 3:
-                self.agent_position[1] -= 1
-            case _:
-                raise Exception("Invalid action")
+    def _get_info(self) -> dict:
+        # Provide auxiliary information (e.g., Manhattan distance)
+        distance = np.linalg.norm(self._agent_location - self._target_location, ord=1)
+        return {"distance_to_goal": distance}
+
+    def reset(self, seed: int | None = None, options: dict | None = None) -> tuple[np.ndarray, dict]:
+        super().reset(seed=seed)
+        self._steps_taken = 0
+        self._agent_location = np.array([0, 0], dtype=np.int32)
+        return self._get_obs(), self._get_info()
+
+    def step(self, action: int) -> tuple[np.ndarray, float, bool, bool, dict]:
+        # Map discrete action to 2D vector direction
+        direction = np.array([0, 0])
+        if action == 0:   direction = np.array([-1, 0])  # Up
+        elif action == 1: direction = np.array([1, 0])   # Down
+        elif action == 2: direction = np.array([0, 1])   # Right
+        elif action == 3: direction = np.array([0, -1])  # Left
+
+        # Update location and explicitly clip to grid boundaries using NumPy
+        self._agent_location = np.clip(
+            self._agent_location + direction, 
+            0, 
+            self.grid_size - 1
+        )
+        
+        self._steps_taken += 1
+
+        # Check termination (reached the goal) and truncation (hit time limit)
+        terminated = bool(np.array_equal(self._agent_location, self._target_location))
+        truncated = bool(self._steps_taken >= self.max_steps)
+
+        # Sparse reward mechanism: +100 for goal, -1 step penalty to encourage speed
+        reward = 100.0 if terminated else -1.0
+
+        return self._get_obs(), reward, terminated, truncated, self._get_info()
+
+
+class QLearningAgent:
+    """
+    A foundational tabular Q-Learning agent using an epsilon-greedy policy.
+    """
+    def __init__(self, action_space: spaces.Discrete, learning_rate: float = 0.1, discount_factor: float = 0.99, epsilon: float = 0.1):
+        self.action_space = action_space
+        self.lr = learning_rate
+        self.gamma = discount_factor
+        self.epsilon = epsilon
+        # Dictionary allows handling of arbitrary discrete coordinate states without pre-allocating a 2D matrix
+        self.q_table = {} 
+
+    def _get_q_values(self, state: tuple) -> np.ndarray:
+        # Initialize state with zeros if unseen
+        if state not in self.q_table:
+            self.q_table[state] = np.zeros(self.action_space.n)
+        return self.q_table[state]
+
+    def choose_action(self, obs: np.ndarray) -> int:
+        state = tuple(obs)
+        # Epsilon-greedy exploration strategy
+        if np.random.random() < self.epsilon:
+            return self.action_space.sample()  # Explore: random action
+        else:
+            return int(np.argmax(self._get_q_values(state)))  # Exploit: best known action
+
+    def update(self, obs: np.ndarray, action: int, reward: float, next_obs: np.ndarray, terminated: bool):
+        state = tuple(obs)
+        next_state = tuple(next_obs)
+        
+        q_values = self._get_q_values(state)
+        next_q_values = self._get_q_values(next_state)
+        
+        # Bellman equation application
+        target = reward
+        if not terminated:
+            target += self.gamma * np.max(next_q_values)
             
-        # avoid the agent to go out of the grid
-        if self.agent_position[0] < 0:
-            self.agent_position[0] = 0
-        if self.agent_position[0] > 4:
-            self.agent_position[0] = 4
-        if self.agent_position[1] < 0:
-            self.agent_position[1] = 0
-        if self.agent_position[1] > 4:
-            self.agent_position[1] = 4
-        
-        # Decrease the number of steps left
-        self.steps_left -= 1
-    
-    def _get_reward(self, observation):
-        # Get the distance to the goal and position from the observation
-        distance_to_goal = observation["distance_to_goal"]
-        agent_position = observation["agent_position"]
+        q_values[action] += self.lr * (target - q_values[action])
 
-        # If the agent is at the goal position, return a large positive reward
-        if agent_position == self.goal_position:
-            return 100.0
-        # If the agent is not at the goal position, return a penality proportional to the distance to the goal
-        else:
-            return -distance_to_goal
 
-    def step(self, action):
-        info = {}
-        reward = 0.0
-
-        # Move the agent
-        self._move(action)
-
-        # Get the new state, reward, done and info
-        observations = self._get_observation()
-        reward = self._get_reward(observations)
-        done = self._is_done()
-        
-        # return the next state, reward, done and info
-        return observations, reward, done, info
-
-class Agent:
-    """The agent that will interact with the environment. The agent will
-        randomly choose an action from the action space and receive a reward
-        based on the action taken
-    """
-
-    def __init__(self, env):
-        self._total_reward = 0.0
-        self._action_space = env.action_space  # New attribute to store the action space
-        self._last_action = None
-        self._last_total_reward = 0.0
-        self._last_distance_to_goal = 8.0
-
-    @property
-    def action_space(self):
-        return self._action_space  # Return the action space
-
-    @property
-    def last_action(self):
-        return self._last_action
-
-    @last_action.setter
-    def last_action(self, action):
-        self._last_action = action
-
-    @property
-    def total_reward(self):
-        return self._total_reward
-
-    @total_reward.setter
-    def total_reward(self, reward):
-        self._total_reward += reward
-    
-    @property
-    def last_total_reward(self):
-        return self._last_total_reward
-    
-    @last_total_reward.setter
-    def last_total_reward(self,total_reward):
-        self._last_total_reward = total_reward
-
-    @property
-    def last_distance_to_goal(self):
-        return self._last_distance_to_goal
-    
-    @last_distance_to_goal.setter
-    def last_distance_to_goal(self, distance_to_goal):
-        self._last_distance_to_goal = distance_to_goal
-
-    def choose_action(self, observation):
-        # Get the list of possible actions
-        actions = self.action_space
-
-        # Randomly choose an action
-        # modify the policy to choose the action based on the observation
-        # use the observation to choose the action based on the distance to the goal
-        if self.total_reward <= self.last_total_reward and self.last_distance_to_goal <= observation["distance_to_goal"]:
-            action = random.choice(actions)
-        else:
-            if self.last_action is None :
-                action = random.choice(actions)
-            else:
-                action = self.last_action
-
-        # Set the last distance to goal and last action
-        self.last_distance_to_goal = observation["distance_to_goal"]
-        self.last_action = action
-        
-        return action
-        
 if __name__ == "__main__":
-    """The main function that will run the environment and agent
-    """
+    # Initialize the standardized environment and agent
+    env = GridWorldEnv(grid_size=15, max_steps=150)
+    agent = QLearningAgent(action_space=env.action_space, learning_rate=0.1, epsilon=0.1)
+
+    episodes = 500
     
-    done = False
-    env = Environment()
-    agent = Agent(env)
+    # Training Loop
+    for episode in range(episodes):
+        obs, info = env.reset()
+        done = False
+        total_reward = 0.0
 
-    # Reset the environment and agent
-    current_obs = env.reset()
+        while not done:
+            # 1. Select action
+            action = agent.choose_action(obs)
+            
+            # 2. Step environment
+            next_obs, reward, terminated, truncated, info = env.step(action)
+            
+            # 3. Update agent policy (Learning step)
+            agent.update(obs, action, reward, next_obs, terminated)
+            
+            # 4. Transition state
+            obs = next_obs
+            total_reward += reward
+            done = terminated or truncated
 
-    # Loop until the environment is done
-    while not done:
-        # Log the current observation
-        logger.info("Steps left: %d" % env.steps_left)
-        logger.info("Observation: %s" % current_obs)
-        logger.info("Total reward: %.4f" % agent.total_reward)
+        # Logging formatting modernized to f-strings
+        if (episode + 1) % 100 == 0:
+            logger.info(f"Episode: {episode + 1}/{episodes} | Total Reward: {total_reward:.2f} | Final Distance: {info['distance_to_goal']}")
 
-        # Choose an action based on the current observation
-        action = agent.choose_action(current_obs)
-
-        # Take the action and get the reward
-        new_state, reward, done, info = env.step(action)
-        logger.info("Action: %s; Reward: %.4f" % (action, reward))
-        logger.info("Next State: %s" % new_state)
-        logger.info("---------------------------------------------------------------")
-
-        # Update the total reward
-        agent.last_total_reward = agent.total_reward
-        agent.total_reward = reward
-        # Update the current observation
-        current_obs = new_state
-
-    logger.info("Episode done!")
-    logger.info("Total reward got: %.4f" % agent.total_reward)
+    logger.info("Training complete.")
